@@ -84,6 +84,7 @@ function normalize(s) {
     if (c.phase !== 'buy') c.phase = 'setup';
     c.buy = !!c.buy;
     c.noBudget = !!c.noBudget;
+    if (!(Number(c.estimate) > 0)) delete c.estimate; else c.estimate = Number(c.estimate);
     c.items = Array.isArray(c.items) ? c.items.filter(i => i && typeof i === 'object' && i.id) : [];
     for (const it of c.items) {
       it.id = String(it.id);
@@ -132,6 +133,20 @@ function seedDefaults(s) {
       cat.items.splice(prevIndex(cat.items, dc.items.slice(0, ii), 'id'), 0, item);
     });
   });
+
+  // Szacunki z data.js – raz, i tylko tam, gdzie nie ma jeszcze własnej kwoty / notatki.
+  const itemById = id => { for (const c of s.cats) { const i = c.items.find(x => x.id === id); if (i) return i; } return null; };
+  const once = (prefix, map, target, apply) => {
+    for (const [id, v] of Object.entries(map || {})) {
+      const t = target(id);
+      if (!t || seeded.has(prefix + id)) continue;
+      seeded.add(prefix + id);
+      apply(t, v);
+    }
+  };
+  once('p:', ESTIMATES.items, itemById, (it, v) => { if (!it.plan) it.plan = v; });
+  once('n:', ESTIMATES.notes, itemById, (it, v) => { if (!it.note) it.note = v; });
+  once('e:', ESTIMATES.cats, id => s.cats.find(c => c.id === id), (c, v) => { if (!c.estimate) c.estimate = v; });
   s.seeded = [...seeded];
 }
 
@@ -220,7 +235,21 @@ function money(items) {
   }
   return { plan, spent, forecast };
 }
-const budgetItems = () => state.cats.filter(c => !c.noBudget).flatMap(c => c.items);
+// Kategoria z szacunkiem całości: liczy się szacunek, dopóki pozycje go nie przekroczą.
+function catMoney(cat) {
+  const m = money(cat.items);
+  const est = cat.estimate || 0;
+  return { plan: Math.max(m.plan, est), spent: m.spent, forecast: Math.max(m.forecast, est), byEstimate: est > 0 && est >= m.plan };
+}
+function totalMoney() {
+  const t = { plan: 0, spent: 0, forecast: 0 };
+  for (const c of state.cats) {
+    if (c.noBudget) continue;
+    const m = catMoney(c);
+    t.plan += m.plan; t.spent += m.spent; t.forecast += m.forecast;
+  }
+  return t;
+}
 
 // --- Elementy wspólne --------------------------------------------------------
 const app = document.getElementById('app');
@@ -326,7 +355,7 @@ function renderStart(opts) {
   document.title = title;
   const rows = allRows();
   const p = progress(rows.map(r => r.item));
-  const m = money(budgetItems());
+  const m = totalMoney();
   const showHint = !isStandalone() && !hintHidden();
   return `
     ${navbar(title)}
@@ -426,7 +455,7 @@ function addCatRow() {
 function renderCat(cat, opts) {
   document.title = cat.name;
   const p = progress(cat.items);
-  const m = money(cat.items);
+  const m = catMoney(cat);
   const active = cat.items.filter(i => isOpen(i) || lingering === i.id);
   const closed = cat.items.filter(i => !isOpen(i) && lingering !== i.id);
   const show = !!ui.showDone[cat.id];
@@ -440,7 +469,7 @@ function renderCat(cat, opts) {
           <div class="eyebrow">${esc(phase ? phase.name : '')}</div>
           <h1 class="hero-title" data-title-marker>${esc(cat.name)}</h1>
           <div class="meta">${p.total ? `${p.done} z ${p.total} zrobione${p.doing ? ` · ${p.doing} w trakcie` : ''}` : 'Brak pozycji'}</div>
-          ${m.plan || m.spent ? `<div class="meta">Wydane ${fmtMoney(m.spent)}${m.plan ? ` · plan ${fmtMoney(m.plan)}` : ''}${cat.noBudget ? ' · poza budżetem' : ''}</div>` : ''}
+          ${m.plan || m.spent ? `<div class="meta">Wydane ${fmtMoney(m.spent)}${m.plan ? ` · ${m.byEstimate ? 'szacunek' : 'plan'} ${fmtMoney(m.plan)}` : ''}${cat.noBudget ? ' · poza budżetem' : ''}</div>` : ''}
         </div>
         ${ring(p.pct, { size: 78, stroke: 7, label: pctLabel(p.pct), animate: opts.animate })}
       </section>
@@ -531,7 +560,7 @@ function agendaRow({ item: it, cat }) {
 // --- Budżet ------------------------------------------------------------------
 function renderBudzet() {
   document.title = 'Budżet';
-  const m = money(budgetItems());
+  const m = totalMoney();
   const budget = state.settings.budget;
   const base = budget || m.forecast;
   const pct = base ? Math.min(1, m.spent / base) : 0;
@@ -541,10 +570,10 @@ function renderBudzet() {
     ? { label: over ? 'ponad budżet' : 'zapas', value: Math.abs(budget - m.forecast), cls: over ? 'bad' : 'ok' }
     : { label: 'do wydania', value: Math.max(0, m.forecast - m.spent), cls: '' };
 
-  const cats = state.cats.map(cat => ({ cat, m: money(cat.items) }));
+  const cats = state.cats.map(cat => ({ cat, m: catMoney(cat) }));
   const counted = cats.filter(c => !c.cat.noBudget);
   const excluded = cats.filter(c => c.cat.noBudget);
-  const unpriced = allRows().filter(({ item, cat }) => !cat.noBudget && item.buy && isOpen(item) && !item.plan && !item.spent).length;
+  const unpriced = allRows().filter(({ item, cat }) => !cat.noBudget && !cat.estimate && item.buy && isOpen(item) && !item.plan && !item.spent).length;
   const top = allRows().filter(({ item, cat }) => !cat.noBudget && item.status !== 'skip' && (item.spent || item.plan))
     .sort((a, b) => Math.max(b.item.spent || 0, b.item.plan || 0) - Math.max(a.item.spent || 0, a.item.plan || 0))
     .slice(0, 5);
@@ -556,7 +585,7 @@ function renderBudzet() {
         <div class="t"><span class="n">${esc(cat.name)}</span><b class="num">${cm.forecast ? fmtMoney(cm.forecast) : ''}</b></div>
         ${cm.forecast ? `
           <div class="bar"><i style="width:${Math.min(100, cm.spent / cm.forecast * 100)}%;background:${cat.color}"></i></div>
-          <div class="s">wydane ${fmtMoney(cm.spent)}${cm.plan ? ` · plan ${fmtMoney(cm.plan)}` : ''}</div>`
+          <div class="s">wydane ${fmtMoney(cm.spent)}${cm.plan ? ` · ${cm.byEstimate ? 'szacunek' : 'plan'} ${fmtMoney(cm.plan)}` : ''}</div>`
         : '<div class="s">brak kwot</div>'}
       </div>
     </a>`;
@@ -577,7 +606,7 @@ function renderBudzet() {
         <div class="stat"><b class="num">${fmtMoney(m.forecast)}</b><span>prognoza</span></div>
         <div class="stat ${third.cls}"><b class="num">${fmtMoney(third.value)}</b><span>${third.label}</span></div>
       </div>
-      <p class="footnote">Prognoza: za zrobione pozycje – ile wydane, za resztę – plan (albo więcej, jeśli już tyle wydano).${unpriced ? ` ${unpriced} ${plural(unpriced, 'zakup nie ma', 'zakupy nie mają', 'zakupów nie ma')} jeszcze kwoty.` : ''}</p>
+      <p class="footnote">Prognoza: za zrobione pozycje – ile wydane, za resztę – plan (albo więcej, jeśli już tyle wydano). Szacunek całej kategorii liczy się, dopóki pozycje go nie przekroczą.${unpriced ? ` ${unpriced} ${plural(unpriced, 'zakup nie ma', 'zakupy nie mają', 'zakupów nie ma')} jeszcze kwoty.` : ''}</p>
 
       <h2 class="group-label">Limit budżetu</h2>
       <div class="group">
@@ -963,8 +992,8 @@ function autoGrow(t) {
 // Kategoria: nowa lub edycja.
 function openCatSheet(cat) {
   const draft = cat
-    ? { name: cat.name, icon: cat.icon, color: cat.color, phase: cat.phase, buy: cat.buy, noBudget: cat.noBudget }
-    : { name: '', icon: 'star', color: CAT_COLORS[0], phase: 'setup', buy: false, noBudget: false };
+    ? { name: cat.name, icon: cat.icon, color: cat.color, phase: cat.phase, buy: cat.buy, noBudget: cat.noBudget, estimate: cat.estimate || 0 }
+    : { name: '', icon: 'star', color: CAT_COLORS[0], phase: 'setup', buy: false, noBudget: false, estimate: 0 };
   const html = () => `
     <div class="sheet-head">
       <button class="sheet-cancel" data-sheet="close">Anuluj</button>
@@ -1000,13 +1029,15 @@ function openCatSheet(cat) {
         <span>Licz w budżecie</span>
         <input type="checkbox" class="switch" data-d="budget" ${draft.noBudget ? '' : 'checked'}>
       </label>
+      <label class="field"><span>Szacunek całości</span><input class="money-input" inputmode="decimal" data-d="estimate" placeholder="0" value="${esc(fmtInput(draft.estimate))}"><i class="unit">zł</i></label>
     </div>
+    <p class="footnote">Szacunek całości (np. kuchnia razem z AGD) liczy się do budżetu, dopóki ceny pozycji go nie przekroczą.</p>
     ${cat ? '<button class="btn-danger" data-sheet="delete">Usuń kategorię</button>' : ''}`;
 
   let s;
   const redraw = () => {
-    const name = s.sheet.querySelector('.name-input');
-    draft.name = name.value;
+    draft.name = s.sheet.querySelector('.name-input').value;
+    draft.estimate = parseAmount(s.sheet.querySelector('[data-d=estimate]').value);
     s.sheet.innerHTML = '<div class="handle"></div>' + html();
   };
   s = openSheet(html(), {
@@ -1025,7 +1056,10 @@ function openCatSheet(cat) {
         const name = s.sheet.querySelector('.name-input').value.trim();
         if (!name) { s.sheet.querySelector('.name-input').focus(); return; }
         draft.name = name;
+        draft.estimate = parseAmount(s.sheet.querySelector('[data-d=estimate]').value);
+        if (!draft.estimate) delete draft.estimate;
         if (cat) {
+          if (!draft.estimate) delete cat.estimate;
           mutate(() => Object.assign(cat, draft), null);
           close();
         } else {
@@ -1171,8 +1205,10 @@ document.getElementById('importFile').addEventListener('change', async e => {
 
 function restoreDefaults() {
   const before = allRows().length + state.cats.length;
+  // Zapominamy tylko usunięte kategorie i pozycje; wpisane szacunki (p:, n:, e:) zostają odhaczone.
   state.seeded = state.seeded.filter(k =>
-    k.startsWith('c:') ? state.cats.some(c => c.id === k.slice(2)) : !!findItem(k.slice(2)));
+    k.startsWith('c:') ? state.cats.some(c => c.id === k.slice(2))
+    : k.startsWith('i:') ? !!findItem(k.slice(2)) : true);
   seedDefaults(state);
   const added = allRows().length + state.cats.length - before;
   saveState();

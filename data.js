@@ -199,3 +199,24 @@ const DEFAULT_CATS = [
     ],
   },
 ];
+
+// Szacunkowe koszty (zł). Wpisywane raz: do „Planu” pozycji, która nie ma jeszcze kwoty,
+// i jako szacunek całej kategorii (np. kuchnia razem z AGD – ceny pojedynczych sprzętów
+// go potem doprecyzują, nie dublując). Późniejsze zmiany w apce mają pierwszeństwo.
+const ESTIMATES = {
+  items: {
+    deska: 600,
+    oswietlenie: 3000,
+    transport: 3000,
+    kanapa: 6000,
+    stol: 3000,
+    zmiany_lok: 10000,
+    umowa_dew: 5000,
+  },
+  notes: {
+    umowa_dew: 'Notariusz łącznie (umowa deweloperska + akt przeniesienia własności): ok. 5000 zł.',
+  },
+  cats: {
+    kuchnia: 35000,
+  },
+};

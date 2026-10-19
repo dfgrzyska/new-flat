@@ -17,7 +17,8 @@ Stan trzymany jest w `localStorage` przeglądarki (bez backendu).
   link, notatka, przeniesienie do innej kategorii, podpowiedź do domyślnych pozycji.
 - **Terminy** – wszystko, co ma datę, po miesiącach; osobno to, co jest po terminie.
 - **Budżet** – wydane, plan, prognoza, opcjonalny limit, podział na kategorie, największe pozycje.
-  Kategorię można wyłączyć z sum (Edytuj → „Licz w budżecie”).
+  Kategorię można wyłączyć z sum (Edytuj → „Licz w budżecie”) albo dać jej szacunek całości
+  (Edytuj → „Szacunek całości”, np. kuchnia z AGD) – liczy się, dopóki ceny pozycji go nie przekroczą.
 - **Więcej** – nazwa mieszkania, link do [Planera mieszkania](https://dfgrzyska.github.io/home-planner/),
   eksport / import kopii, przywracanie usuniętych pozycji domyślnych.
 
@@ -37,6 +38,9 @@ Pozycje dopisane w `data.js` (nowe `id`) pojawią się u użytkownika przy nast�
 w miejscu wynikającym z kolejności w pliku. Pozycje, które użytkownik usunął, nie wracają
 (chyba że użyje „Przywróć usunięte pozycje domyślne”). Podpowiedzi (`hint`) są czytane
 z `data.js` na bieżąco, więc ich poprawki widać od razu.
+
+`ESTIMATES` w `data.js` to szacunkowe koszty: wpisują się raz jako „Plan” pozycji bez kwoty
+(i jako szacunek całości kategorii). To, co potem zmienisz w apce, ma pierwszeństwo.
 
 ## Hosting (GitHub Pages)
 
